@@ -1,0 +1,204 @@
+﻿1. file-new-project-andriod application project 创建andriod工程.
+2. 指定一个 application name，比如CTMProcess , packagename : com.raiing.ctmprocess
+3. 不勾选 create custom launcher icon 
+   不勾选 create activity
+     勾选 Mark this project as a library
+     勾选 create project in workspace
+    不勾选 add project to working sets
+3.1 project - properties - resource - text file encoding - other - UTF-8
+4. 右键单击project explorer中的project名称，比如CTMProcess。
+    右键菜单 new-folder  folder name 填写 jni
+5. 复制C的源文件和头文件，在project explorer中右击jni目录名
+    右键菜单选择 paste.
+6. 在windows中，找到项目所在目录，找到src目录，在src目录下新建目录 com\raiing
+7. 在eclipse 的project explorer 中按F5刷新。
+8. 在src-com.raiing 上单击右键，选择 new - class 
+9. 在new java class 对话框中，name 中 填写类名，比如CTMProcess库，我填写了CTMProcess,确认。
+10. 在project explorer 中的 src - com.raiing - 打开 CTMProcess.java 
+11. 编写类的代码,为每个jni接口函数写声明。
+11-a. 类代码大概分个部分。
+     1.) 常亮定义，格式：private/public final 类型 常量名 = 数值;  
+         若仅想在类内的函数使用，则private
+         若想在类外也可以使用，则定义为public.
+         这个相当于C中的define 或const变量。 C接口文件中的对外提供的define常量，可以使用public final定义为java类的常亮。
+     2.） 变量定义：格式：private/public 类型 变量名;
+         这里有个特别的变量，就是C库返回的实例指针，这个指针要被保存在java类的实例中，以便每次调用C函数时可以回传这个实例指针，以便允许多实例共存。
+         代码就是通过这个实例指针使用同一份代码操作不同的实例的。
+     3.）java类的构造函数，与类名相同，无返回值，无参数，空函数体。
+     4.) java类提供给外部的接口，public声明的函数。里面封装调用了jni的外部接口函数。
+         java库的调用者，就是调用这些java接口函数使用java库的。
+     5.) jni的封装接口函数，按照C库对外提供的接口函数适当调整,对于java不许使用的参数可以在jni内部提供，而jni不用提供这个参数。
+
+     6.) java类的析构函数,在java类的实例被释放时调用，析构函数内必须释放java类动态分配的内存，比如C库中需要动态释放的内存，调用C库中的destroy函数，但需要通过jni封装的函数调用。
+         这里是clean函数。
+          @Override
+	protected void finalize() throws Throwable {
+		super.finalize();
+		clean();  //调用经过封装的java层的C实例销毁函数。
+	}
+
+     7.) java类中加载C库，比如C库的名称是MBTProcess,这个名称是android.mk中定义的lib的名称。
+	static {
+		System.loadLibrary("MBTProcess");
+	}
+
+12. 使用javah生成jni头文件.
+12-a. run - external tools - external tools configuration - program - new lanch configuration
+12-b. name：javah
+      location：jdk安装目录中的javah.exe所在目录\javah.exe    比如：C:\Program Files\Java\jdk1.7.0_02\bin\javah.exe
+      working directory: ${workspace_loc}
+      arguments: -v -classpath "${project_loc}/bin/classes" -d "${project_loc}/jni" ${java_type_name}
+      common - Display in favorites menu - 选中External tools    以便在run - external tools 中显示javah。
+12-c. apply , close
+12-d. 点中 src- com.raiing - CTMProcess.java文件
+12-e. run - external tools - javah
+      将生成jni的头文件在jni目录下。按F5刷新project explorer 的jni目录。
+13. 添加 Android.mk 和 Application.mk 文件到 jni目录。
+android.mk 内容：
+
+LOCAL_PATH := $(call my-dir)
+
+include $(CLEAR_VARS)
+
+LOCAL_LDLIBS := -L$(SYSROOT)/usr/lib -llog
+
+LOCAL_MODULE := child
+
+LOCAL_SRC_FILES := com_raiing_childmodule_ChildModule.cpp utilities.c logbook.c ctmWSProcess.c ctmFlwProcess.c prophProcess.c ctmProcess.c 
+
+include $(BUILD_SHARED_LIBRARY)
+ 
+需要修改上述内容的LOCAL_MODULE:= 为希望的库名称。生成的库名将在这个名称前增加lib前缀。
+需要修改LOCAL_SRC_FILES:= 将jni目录下的所有 cpp c添加到后面,空格分隔。
+
+Application.mk内容：
+APP_ABI := all
+
+14. 添加ndk编译命令到项目。
+14-a. run - external tools - external tools configuration - program - new lanch configuration
+                       main- name: ndk_build
+                       main-location: ndk安装目录\ndk-build.cmd                        比如：S:\work_dir\android-ndk-r9d\ndk-build.cmd
+                       main- working directory: ${workspace_loc}/${project_name}/jni 
+		       common - Display in favorites menu - 选中External tools
+14-b. 选中CTMProcess项目名，project - properties - builders - import - ndk_build
+14-d. 在builders 中选中 ndk_build ，点击UP，将ndk_build调整到最高。
+
+14-e. 添加ndk路径： window - preferences - android - ndk - ndk location : ndk保存路径，比如：S:\work_dir\android-ndk-r9d
+
+15. 在jni目录中添加与jni生成的头文件同名的.cpp文件。并在.cpp文件中实现jni的函数。
+
+16. .cpp 头部包含如下文件：
+#include <jni.h>
+#include "由javah生成的头文件"
+#include "c源码中的提供给外部的头文件"
+#include <android/log.h>
+#define LOG_TAG       "库的log标志符" // 这个是自定义的LOG的标识
+#define LOGD(...)      __android_log_print(ANDROID_LOG_DEBUG,LOG_TAG,__VA_ARGS__) // 定义LOG类型
+#define LOGI(...)      __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__) // 定义LOG类型
+#define LOGW(...)      __android_log_print(ANDROID_LOG_WARN,LOG_TAG,__VA_ARGS__) // 定义LOG类型
+#define LOGE(...)      __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__) // 定义LOG类型
+#define LOGF(...)      __android_log_print(ANDROID_LOG_FATAL,LOG_TAG,__VA_ARGS__) // 定义LOG类型
+#define LOGFD(fmt,...)  __android_log_print(ANDROID_LOG_DEBUG,LOG_TAG,fmt,__VA_ARGS__) // 定义LOG类型
+#define LOGFI(fmt,...)  __android_log_print(ANDROID_LOG_INFO,LOG_TAG,fmt,__VA_ARGS__) // 定义LOG类型
+#define LOGFW(fmt,...)  __android_log_print(ANDROID_LOG_WARN,LOG_TAG,fmt,__VA_ARGS__) // 定义LOG类型
+#define LOGFE(fmt,...)  __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,fmt,__VA_ARGS__) // 定义LOG类型
+#define LOGFF(fmt,...)  __android_log_print(ANDROID_LOG_FATAL,LOG_TAG,fmt,__VA_ARGS__) // 定义LOG类型
+
+在下面依次实现其他jni封装的函数。
+
+17. 一定在convert to C/C++之前提交svn，因为执行后，可能出现各种找不到文件的问题，目前没找到确切的解决方法。
+    提交时，不要提交bin和gen目录，这两个目录是编译生成的，若提交，后面可能发生svn冲突。
+
+18. 关于jni封装代码的思路：
+大概就是，通过jclass 得到 关于类的变量和函数的id，再通过jni函数参数表或NewObject 得到实例对象obj，然后就可以访问这个obj的指定id的变量或或函数了。就达到在jni中访问java层变量和函数的目的。
+在jni中可以直接访问C的变量和函数.
+然后就可以交换C和java的数据了。
+若需要返回给java基础类型的数据，则可以直接return回去。
+若需要返回给java复杂类型的数据，如arraylist 或 类实例，则需要使用NewObject 在jni中创建响应的对象，填入数据后，return obj。
+
+jni是在java层和C层之间的衔接层。
+
+在jni中获得java层的类结构的方法：
+a. 若没有类实例的变量，则必须使用 env->FindClass() 来通过类名得到一个jclass类型的引用。参数使用类名，比如 我们自定义的 CTMProcess.java 在 com/raiing/ 目录下。 则调用为： jclass cls = env->FindClass("com/raiing/CTMProcess");
+   若有类的实例变量，则可以使用 env->GetObjectClass() 来通过object实例得到这个object的jclass类型的引用。比如，我们的jni函数的参数表中通过java层传入一个 MBTCycleInfo类型的实例变量。
+   比如 jni函数： paddHistoryCycles( MBTCycleInfo info)  则在jni实现中，可以通过 jclass cls = env->GetObjectClass(info); 得到MBTCycleInfo类的jclass引用。
+b. 得到jclass引用的目的是可以访问这个类的某个实例中的变量或函数。可以认为，同过jclass引用，可以得到每个在类中定义的变量或函数的地址,但不是地址，仅是可以这样理解。
+   通过 jfieldID var_fieldID = env->GetFieldID()  去获得变量的id。
+   通过 jmethodID mem_methodID = env->GetMethodID() 去获得函数的id。
+   这样当我们有一个实例对象时，就知道相关的变量或函数在这个实例对象的什么位置了，就能够修改这个实例对象中的变量了。
+c. 若有了类的变量id或函数id，及类的实例，就可以通过id修改变量，或调用函数。
+   通过Call<Type>Method() 调用函数。type表示被调用的函数的返回值类型。比如Boolean型返回值的函数使用 CallBooleanMethod调用。
+   通过Get<Type>Field 获得指定的实例中的指定id的变量的值。 比如获得整数变量的值，调用 GetIntField
+   通过Set<Type>Field 设置指定的实例中的指定id的变量的值。 比如设置浮点数变量的值，调用 SetFloatField
+d. 若想通过jclass 新建一个这个类型的实例。则
+d-0 通过a的方法获得jclass.
+d-1 获得 这个类型的init函数，对于类中没有显示定义init的类，init的声明都是：void init();  无参数，无返回值。对于显示定义了init的类，则需要按照定义的参数和返回值通过 GetMethodID或者这个init函数的ID
+    比如 int init( String str ) 调用方法：jmethodID init_methodID = env->GetMethodID( cls, "<init>","(Ljava/lang/String;)I");   "<init>"表示获得init函数(<> 的意义没有细查) ,Ljava/lang/String; 指定参数的类型 I是返回值类型。
+    比如 void init()  调用方法：jmethodID init_methodID = env->GetMethodID( cls, "<init>","()V"); 
+d-2 调用 env->NewObject( cls, init_methodID,...)  ,...部分若init有参数，则填写参数，若没有则去掉。
+    例如 jobject obj = env->NewObject( cls, init_methodID);
+d-3 若这个obj是希望返回给java层的，则不需要调用 env->DeleteLocalRef(obj),若这个obj仅是在jni函数中临时使用的，则使用完后需要调用env->DeleteLocalRef(obj)。
+
+e. 在C与java间复制数据：
+   通过abcd 可以得到java的jclass obj 变量id 函数id ，通过Set/GetField设置或读取java变量，以便与C变量交换信息。
+f. 在jni函数中，可以直接定义C头文件中外部声明了的数据类型的变量，可以直接调用C的外部函数。
+
+关于jni数据类型及函数使用方法查看网址：
+http://docs.oracle.com/javase/7/docs/technotes/guides/jni/spec/functions.html
+http://home.pacifier.com/~mmead/jni/cs510ajp/index.html#JNI Data Types
+例子：但这个例子貌似没有编译使用过，个别地方有错误。大部分是对的，可以参考。
+错误的地方在使用arrayList 的add函数时，调用的CallObjectMethod ，但应该调用CallBooleanMethod，因为add函数返回的是Boolean值，不是Object.
+http://blog.csdn.net/qinjuning/article/details/7607214
+
+
+测试库：
+1. 编译库生成 bin/*.jar和libs/armeabi/*.so
+2. 在测试工程中的libs/  下 file - new -folder  名称：armeabi.
+3. 从windows浏览器窗口拖jni项目中的*.jar到eclipse中的测试工程的libs下。
+   若选择copy则复制一个jar的副本到libs目录下。
+   若选择link则仅建立一个指向jni项目中的jar的连接。
+4. 类似3中，拖放*.so到libs/armeabi中。
+5. 在使用jni项目中的接口类的java文件中 import 这个接口类的包。
+上述5步若出现问题，则可能出现UnsatisfiedLinkError:错误。
+6. clean  然后 run.
+
+
+ANDROID test 工程，其中第6~7步可以解决 java.lang.NoClassDefFoundError 这个错误。
+1. file-new-other-android test project.
+2. Project Name 随便命名，比如 testCTMProcess  , location 设置在与被测工程的同一级目录中。
+3. Select Test Target： 选择要测试的项目名称，比如CTMProcess.
+4. 在testCTMProcess项目中打开 src---com.example.ctmprocess.test 右键单击com.example.ctmprocess.test，
+   选择new -- JUnit Test Case , 其他默认，Name设置为测试类的名称，比如设置为testCTMProcessClass 
+   可以勾上 setUp 和tearDown 分别用于测试前初始化和测试后收尾的工作。 
+5. 修改这个testCTMProcessClass类的父类名 从 extends TestCase 修改为 extends AndroidTestCase
+6. 右键单击 项目管理器中的testCTMProcess项目名，选择 Properties --- Java Build Path -- Android Dependencies 点Remove
+   选择 Properties --- Java Build Path -- Add JARs  选择被测项目的bin目录中的jar文件，比如 CTMProcess\bin\ctmprocess.jar
+7. 在 properties -- java build path - order and export 中 勾选 被测项目名 比如CTMProcess 和 被测项目的jar名 比如 ctmprocess.jar。
+8. 在testCTMProcess项目目录中，增加libs\armeabi\libCTMProcess.so  否则会有错误：java.lang.UnsatisfiedLinkError: can not load ...
+9. 若发生，java.lang.UnsatisfiedLinkError: native method not implement  类似的错误，考虑可能是jni封装函数名不符合要求，大小写、路径、java .h .cpp中名字是否一样...
+10. 尚未查明原因，String str = "dddd"; Log.d("test",str); 使用Log.d输出String变量的值在androidTestCase工程中不能在logcat中看到log输出，并且运行无错误。
+    解决方法：1.可能重新启动一次eclipse。
+              2. 在run test时，若提示是否monitor logcat并选择高于error的log才输出时，将error设置为assert.
+
+11. 添加单元测试函数：
+    public void testFunctionName() throws Exception{
+    }
+    其中必须以test开始，FunctionName自定义。
+    若不是以test开始的不会被自动测试自动调用执行。对于内部使用的子程序，不要以test开始。
+
+FAQ:
+1. ECLIPSE生成JAVADOC时出错：编码GBK的不可映射字符
+由于java源代码是用的UTF-8编码，Eclipse中默认编码是GB18030，因此，在生成javadoc的时候，需要手工指定一下编码和字符集。
+同时注意，不要将java源文件设置为带签名的utf8，一定是不带签名的utf8，否则在文件开头部分会有编译器不能识别的字节。
+解决方案是：
+主菜单–>Project–>Generate javadoc–>next>next–> 在 “Extra javadoc options”下面的文本框中填入 "-encoding UTF-8 -charset UTF-8"
+并且需要选择 JRE source compatiblility >=1.6
+
+2. javadoc.exe 目前仅支持 
+/**
+ *
+ *
+ **/
+类型的注释，其他注释不能被自动文档化。
+
+
